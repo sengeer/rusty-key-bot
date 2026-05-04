@@ -1,11 +1,14 @@
 // Объявления модулей
+mod errors;
+mod domain;
 mod config;
+mod utils;  
 
 // Импорты API из крейтов
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt};
 
-// runtime tokio через атрибут-макрос
+// runtime tokio через атрибут
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Инициализация системы логирования

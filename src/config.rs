@@ -1,13 +1,13 @@
-// Модуль env из стандартной библиотеки Rust для переменных окружения
+// env из стандартной библиотеки Rust для переменных окружения
 use std:: env;
 
-// Публичный API модуля
+// Публичная структура Settings
 pub struct Settings {
     pub bot_token: String,
     pub database_url: String,
 }
 
-// Имплементация типа Settings
+// Имплементация Settings
 impl Settings {
     // Метод для получения переменных окружения
     pub fn from_env() -> anyhow::Result<Self> {
