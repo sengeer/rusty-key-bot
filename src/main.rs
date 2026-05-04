@@ -1,8 +1,8 @@
 // Объявления модулей
+mod app;
 mod errors;
 mod domain;
 mod config;
-mod utils;  
 
 // Импорты API из крейтов
 use tracing::{error, info};
