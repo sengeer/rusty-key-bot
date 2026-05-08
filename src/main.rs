@@ -6,7 +6,7 @@ mod domain;
 mod config;
 
 // Импорты API из крейтов
-use tracing::{error, info};
+use tracing::{error};
 use tracing_subscriber::{EnvFilter, fmt};
 
 // runtime tokio через атрибут
@@ -14,8 +14,13 @@ use tracing_subscriber::{EnvFilter, fmt};
 async fn main() -> anyhow::Result<()> {
     // Инициализация системы логирования
     init_tracing();
-    // Использование типа Settings из модуля config
+    // Использование Settings из модуля config
     let settings = config::Settings::from_env()?;
+
+    // Создание пула подключений
+    let pool = infra::create_pool(&settings.database_url).await?;
+    // Применение миграций к БД
+    infra::run_migrations(&pool).await?;
 
     Ok(())
 }

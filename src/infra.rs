@@ -51,10 +51,9 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), AppError> {
 
 // Атрибут derive с Clone
 #[derive(Clone)]
-// Структура VaultService
-pub struct VaultService<R, C> {
-    repo: R,
-    crypto: C,
+// Структура SqliteVaultRepository
+pub struct SqliteVaultRepository {
+    pool: SqlitePool,
 }
 
 // Имплементация SqliteVaultRepository для хранилища под SQLite
@@ -197,5 +196,131 @@ impl VaultRepository for SqliteVaultRepository {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+}
+
+// Атрибут derive с Clone и Default
+#[derive(Clone, Default)]
+// Пустая структура CryptoManager
+pub struct CryptoManager;
+
+// Имплементация CryptoManager
+impl CryptoManager {
+    // Генерация соли
+    fn random_salt() -> Vec<u8> {
+        let salt = SaltString::generate(&mut OsRng);
+        salt.as_str().as_bytes().to_vec()
+    }
+}
+
+// Имплементация CryptoPort
+impl CryptoPort for CryptoManager {
+    // Создание записи мастер-пароля
+    fn create_master_record(&self, master_password: &str) -> Result<MasterRecord, AppError> {
+        if master_password.is_empty() {
+            return Err(AppError::EmptyMasterPassword);
+        }
+
+        let master_salt = Self::random_salt();
+        let key_salt = Self::random_salt();
+        let master_salt_str = std::str::from_utf8(&master_salt)
+            .map_err(|_| AppError::Crypto)?
+            .to_string();
+        let salt = SaltString::from_b64(&master_salt_str).map_err(|_| AppError::Crypto)?;
+
+        let hash = Argon2::default()
+            .hash_password(master_password.as_bytes(), &salt)
+            .map_err(|_| AppError::Crypto)?
+            .to_string();
+
+        Ok(MasterRecord {
+            hash,
+            master_salt,
+            key_salt,
+        })
+    }
+
+    // Проверка мастер-пароля
+    fn verify_master_password(
+        &self,
+        master_password: &str,
+        record: &MasterRecord,
+    ) -> Result<bool, AppError> {
+        let parsed = PasswordHash::new(&record.hash).map_err(|_| AppError::Crypto)?;
+        Ok(Argon2::default()
+            .verify_password(master_password.as_bytes(), &parsed)
+            .is_ok())
+    }
+
+    // Получение симметричного ключа для записей
+    fn derive_entry_key(
+        &self,
+        master_password: &str,
+        key_salt: &[u8],
+    ) -> Result<[u8; 32], AppError> {
+        let mut key = [0u8; 32];
+        Argon2::default()
+            .hash_password_into(master_password.as_bytes(), key_salt, &mut key)
+            .map_err(|_| AppError::Crypto)?;
+        Ok(key)
+    }
+
+    // Зашифровка
+    fn encrypt(
+        &self,
+        key: &[u8; 32],
+        plaintext: &[u8],
+        aad: &[u8],
+    ) -> Result<EncryptedField, AppError> {
+        let cipher = ChaCha20Poly1305::new(key.into());
+        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+        let payload = chacha20poly1305::aead::Payload {
+            msg: plaintext,
+            aad,
+        };
+        let encrypted = cipher
+            .encrypt(&nonce, payload)
+            .map_err(|_| AppError::Crypto)?;
+        Ok(EncryptedField {
+            nonce: nonce.to_vec(),
+            cipher: encrypted,
+        })
+    }
+
+    // Расшифровка
+    fn decrypt(
+        &self,
+        key: &[u8; 32],
+        field: &EncryptedField,
+        aad: &[u8],
+    ) -> Result<Vec<u8>, AppError> {
+        let cipher = ChaCha20Poly1305::new(key.into());
+        let nonce = chacha20poly1305::Nonce::from_slice(&field.nonce);
+        let payload = chacha20poly1305::aead::Payload {
+            msg: &field.cipher,
+            aad,
+        };
+        cipher.decrypt(nonce, payload).map_err(|_| AppError::Crypto)
+    }
+}
+
+// Атрибут теста
+#[cfg(test)]
+// Тесты
+mod tests {
+    use crate::app::CryptoPort;
+
+    use super::CryptoManager;
+
+    #[test]
+    fn crypto_roundtrip_works() {
+        let crypto = CryptoManager;
+        let key = crypto
+            .derive_entry_key("super-master", b"fixed-test-salt")
+            .expect("key");
+        let aad = b"user:service";
+        let field = crypto.encrypt(&key, b"hello", aad).expect("enc");
+        let plain = crypto.decrypt(&key, &field, aad).expect("dec");
+        assert_eq!(plain, b"hello");
     }
 }
