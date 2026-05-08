@@ -49,7 +49,7 @@ pub trait CryptoPort: Send + Sync {
     ) -> Result<Vec<u8>, AppError>;
 }
 
-// Атрибут derive
+// Атрибут derive с Clone
 #[derive(Clone)]
 // Структура VaultService
 pub struct VaultService<R, C> {
@@ -63,7 +63,7 @@ where
     R: VaultRepository,
     C: CryptoPort,
 {
-    // Ассоциированная функция
+    // Ассоциированная функция-конструктор
     pub fn new(repo: R, crypto: C) -> Self {
         Self { repo, crypto }
     }

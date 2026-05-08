@@ -1,4 +1,5 @@
 // Объявления модулей
+mod infra;
 mod app;
 mod errors;
 mod domain;
