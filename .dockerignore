@@ -1,0 +1,14 @@
+# build
+target
+
+# vcs
+.git
+
+# ci
+.github
+
+# secrets
+data
+.env
+*.db
+*.sqlite

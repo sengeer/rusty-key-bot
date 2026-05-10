@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    image: rusty-key-bot:local
+    container_name: rusty-key-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite://data/rusty_key.db
+      RUST_LOG: info
+    volumes:
+      - ./data:/app/data

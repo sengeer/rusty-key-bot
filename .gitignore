@@ -3,3 +3,7 @@
 # misk
 .cursor
 temp
+
+# docker
+.env
+data/

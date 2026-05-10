@@ -1,0 +1,37 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "dev/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-rusty-key-bot
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+
+            BRANCH="${{ github.ref_name }}"
+            git fetch origin
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+
+            docker compose up -d --build --remove-orphans
+            docker compose ps
