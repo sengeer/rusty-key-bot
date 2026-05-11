@@ -68,13 +68,97 @@ where
         Self { repo, crypto }
     }
 
-    // Установка мастер-пароля
-    pub async fn set_master(&self, user_id: i64, master_password: &str) -> Result<(), AppError> {
-        if master_password.is_empty() {
+    // Проверка наличия мастер-пароля в БД
+    pub async fn has_master(&self, user_id: i64) -> Result<bool, AppError> {
+        Ok(self.repo.get_master(user_id).await?.is_some())
+    }
+
+    // Проверка текущего мастер-пароля
+    pub async fn verify_current_master(
+        &self,
+        user_id: i64,
+        master_password: &str,
+    ) -> Result<(), AppError> {
+        let record = self
+            .repo
+            .get_master(user_id)
+            .await?
+            .ok_or(AppError::MasterPasswordNotSet)?;
+        if master_password.is_empty()
+            || !self
+                .crypto
+                .verify_master_password(master_password, &record)?
+        {
+            return Err(AppError::InvalidMasterPassword);
+        }
+        Ok(())
+    }
+
+    // Установка мастер-пароля впервые или смена с подтверждением текущего
+    // При смене перешифровываются все записи, чтобы совпадал ключ с новым key_salt
+    pub async fn set_master(
+        &self,
+        user_id: i64,
+        new_master_password: &str,
+        current_master_password: Option<&str>,
+    ) -> Result<(), AppError> {
+        if new_master_password.is_empty() {
             return Err(AppError::EmptyMasterPassword);
         }
-        let record = self.crypto.create_master_record(master_password)?;
-        self.repo.upsert_master(user_id, record).await
+
+        match self.repo.get_master(user_id).await? {
+            None => {
+                let record = self.crypto.create_master_record(new_master_password)?;
+                self.repo.upsert_master(user_id, record).await
+            }
+            Some(old_record) => {
+                let current = current_master_password.ok_or(AppError::CurrentMasterPasswordRequired)?;
+                if current.is_empty()
+                    || !self
+                        .crypto
+                        .verify_master_password(current, &old_record)?
+                {
+                    return Err(AppError::InvalidMasterPassword);
+                }
+
+                let old_key = self.crypto.derive_entry_key(current, &old_record.key_salt)?;
+                let new_record = self.crypto.create_master_record(new_master_password)?;
+                let new_key = self
+                    .crypto
+                    .derive_entry_key(new_master_password, &new_record.key_salt)?;
+
+                let services = self.repo.list_services(user_id).await?;
+                for service in services {
+                    let encrypted = self
+                        .repo
+                        .get_entry(user_id, &service)
+                        .await?
+                        .ok_or(AppError::EntryNotFound)?;
+                    let aad = format!("{user_id}:{}", encrypted.service);
+                    let login_pt = self.crypto.decrypt(&old_key, &encrypted.login, aad.as_bytes())?;
+                    let password_pt =
+                        self.crypto.decrypt(&old_key, &encrypted.password, aad.as_bytes())?;
+                    let note_pt = encrypted
+                        .note
+                        .as_ref()
+                        .map(|f| self.crypto.decrypt(&old_key, f, aad.as_bytes()))
+                        .transpose()?;
+
+                    let rotated = EncryptedEntry {
+                        service: encrypted.service,
+                        login: self.crypto.encrypt(&new_key, &login_pt, aad.as_bytes())?,
+                        password: self.crypto.encrypt(&new_key, &password_pt, aad.as_bytes())?,
+                        note: note_pt
+                            .as_ref()
+                            .map(|pt| self.crypto.encrypt(&new_key, pt, aad.as_bytes()))
+                            .transpose()?,
+                    };
+                    self.repo.upsert_entry(user_id, rotated).await?;
+                }
+
+                self.repo.upsert_master(user_id, new_record).await
+            }
+        }
     }
 
     // Добавление записи

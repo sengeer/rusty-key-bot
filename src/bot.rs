@@ -26,6 +26,8 @@ pub struct BotState {
 // Перечисления PendingAction
 pub enum PendingAction {
     SetMaster,
+    SetMasterAwaitCurrent { new_password: Option<String> },
+    SetMasterAwaitNew { current_master: String },
     AddAwaitService,
     AddAwaitLogin {
         service: String,
@@ -113,24 +115,44 @@ async fn handle_command(
         "/help" => {
             bot.send_message(
                 chat_id,
-                "/start - начало;\n/help - шпаргалка по командам (мы тут);\n/set_master [master] - установка мастер-пароля;\n/add [service] [login] [password] [note?] - добавить запись указав через пробел: название сервиса, логин, пароль и текст заметки (необязательно). Пример: /add google example@example.com nCOzFyBxXdmDE3rD заметка;\n/get [service] - получить запись по названию сервиса;\n/list - список записей;\n/delete [service] - удалить запись по названию сервиса;\n/gen [len] [special:true|false] - сгенерировать пароль, указав через пробел: длину пароля и использовать ли спец. символы (!@#$%^&*()-_=+[]{};:,.?). Пример: /gen 16 true.",
+                "/start - начало;\n/help - шпаргалка по командам (мы тут);\n/set_master [новый_мастер] - установка или смена мастер-пароля (при смене бот запросит текущий пароль);\n/add [service] [login] [password] [note?] - добавить запись указав через пробел: название сервиса, логин, пароль и текст заметки (необязательно). Пример: /add google example@example.com nCOzFyBxXdmDE3rD заметка;\n/get [service] - получить запись по названию сервиса;\n/list - список записей;\n/delete [service] - удалить запись по названию сервиса;\n/gen [len] [special:true|false] - сгенерировать пароль, указав через пробел: длину пароля и использовать ли спец. символы (!@#$%^&*()-_=+[]{};:,.?). Пример: /gen 16 true.",
             )
             .await?;
         }
         "/set_master" => {
-            if let Some(master) = parts.next() {
-
-                respond_result(
-                    &bot,
-                    chat_id,
-                    state
-                        .service
-                        .set_master(user_id, master)
-                        .await
-                        .map(|_| "🔒 Мастер-пароль установлен/обновлён.".to_string()),
-                )
-                .await?;
-            } else {
+            let has_master = match state.service.has_master(user_id).await {
+                Ok(v) => v,
+                Err(e) => {
+                    respond_result(&bot, chat_id, Err(e)).await?;
+                    return Ok(());
+                }
+            };
+            if let Some(new_master) = parts.next() {
+                if !has_master {
+                    respond_result(
+                        &bot,
+                        chat_id,
+                        state
+                            .service
+                            .set_master(user_id, new_master, None)
+                            .await
+                            .map(|_| "🔒 Мастер-пароль установлен.".to_string()),
+                    )
+                    .await?;
+                } else {
+                    state.pending.lock().await.insert(
+                        chat_id,
+                        PendingAction::SetMasterAwaitCurrent {
+                            new_password: Some(new_master.to_string()),
+                        },
+                    );
+                    bot.send_message(
+                        chat_id,
+                        "🔐 Мастер-пароль уже установлен. Введите текущий мастер-пароль следующим сообщением для подтверждения.",
+                    )
+                    .await?;
+                }
+            } else if !has_master {
                 state
                     .pending
                     .lock()
@@ -138,6 +160,18 @@ async fn handle_command(
                     .insert(chat_id, PendingAction::SetMaster);
                 bot.send_message(chat_id, "🔑 Введите новый мастер-пароль следующим сообщением.")
                     .await?;
+            } else {
+                state.pending.lock().await.insert(
+                    chat_id,
+                    PendingAction::SetMasterAwaitCurrent {
+                        new_password: None,
+                    },
+                );
+                bot.send_message(
+                    chat_id,
+                    "🔐 Мастер-пароль уже установлен. Введите текущий мастер-пароль следующим сообщением для смены.",
+                )
+                .await?;
             }
         }
         "/add" => {
@@ -244,9 +278,56 @@ async fn handle_pending(
                 chat_id,
                 state
                     .service
-                    .set_master(user_id, text)
+                    .set_master(user_id, text, None)
                     .await
-                    .map(|_| "🔒 Мастер-пароль установлен/обновлён.".to_string()),
+                    .map(|_| "🔒 Мастер-пароль установлен.".to_string()),
+            )
+            .await?;
+            best_effort_delete_message(&bot, chat_id, msg.id).await;
+        }
+        PendingAction::SetMasterAwaitCurrent { new_password } => {
+            if let Some(new_pwd) = new_password {
+                respond_result(
+                    &bot,
+                    chat_id,
+                    state
+                        .service
+                        .set_master(user_id, &new_pwd, Some(text))
+                        .await
+                        .map(|_| "🔒 Мастер-пароль обновлён.".to_string()),
+                )
+                .await?;
+            } else {
+                match state.service.verify_current_master(user_id, text).await {
+                    Ok(()) => {
+                        state.pending.lock().await.insert(
+                            chat_id,
+                            PendingAction::SetMasterAwaitNew {
+                                current_master: text.to_string(),
+                            },
+                        );
+                        bot.send_message(
+                            chat_id,
+                            "🔑 Введите новый мастер-пароль следующим сообщением.",
+                        )
+                        .await?;
+                    }
+                    Err(e) => {
+                        respond_result(&bot, chat_id, Err(e)).await?;
+                    }
+                }
+            }
+            best_effort_delete_message(&bot, chat_id, msg.id).await;
+        }
+        PendingAction::SetMasterAwaitNew { current_master } => {
+            respond_result(
+                &bot,
+                chat_id,
+                state
+                    .service
+                    .set_master(user_id, text, Some(current_master.as_str()))
+                    .await
+                    .map(|_| "🔒 Мастер-пароль обновлён.".to_string()),
             )
             .await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
@@ -374,6 +455,10 @@ async fn respond_result(
                 "🔑 Сначала установите мастер-пароль через /set_master.".to_string()
             }
             AppError::InvalidMasterPassword => "❌ Неверный мастер-пароль.".to_string(),
+            AppError::CurrentMasterPasswordRequired => {
+                "🔐 Чтобы сменить мастер-пароль, сначала подтвердите текущий (см. /set_master)."
+                    .to_string()
+            }
             AppError::EntryNotFound => "🤷‍♂️ Запись не найдена.".to_string(),
             other => format!("❌ Ошибка: {other}"),
         },
