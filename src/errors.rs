@@ -5,25 +5,27 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 // Таксономия ошибок
 pub enum AppError {
-    #[error("service name is empty")]
+    #[error("пустое название сервиса")]
     EmptyServiceName,
-    #[error("login is empty")]
+    #[error("пустой логин")]
     EmptyLogin,
-    #[error("password is empty")]
+    #[error("пустой пароль")]
     EmptyPassword,
-    #[error("master password is empty")]
+    #[error("пустой мастер-пароль")]
     EmptyMasterPassword,
-    #[error("master password is not set")]
+    #[error("мастер-пароль не установлен")]
     MasterPasswordNotSet,
-    #[error("master password is invalid")]
+    #[error("неверный мастер-пароль")]
     InvalidMasterPassword,
-    #[error("entry not found")]
+    #[error("для смены мастер-пароля требуется подтверждение текущего")]
+    CurrentMasterPasswordRequired,
+    #[error("запись не найдена")]
     EntryNotFound,
-    #[error("invalid argument: {0}")]
+    #[error("неверный аргумент: {0}")]
     InvalidArgument(String),
-    #[error("crypto error")]
+    #[error("ошибка криптографии")]
     Crypto,
-    #[error("storage error: {0}")]
+    #[error("ошибка хранилища: {0}")]
     Storage(String),
 }
 
