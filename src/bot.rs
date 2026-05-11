@@ -323,10 +323,10 @@ async fn handle_pending(
                 .map(|entry| {
                     let note = entry
                         .note
-                        .map(|n| format!("\nnote: {n}"))
+                        .map(|n| format!("\n📝 Заметка: {n}"))
                         .unwrap_or_default();
                     format!(
-                        "service: {}\nlogin: {}\npassword: {}{}",
+                        "👾 Сервис: {}\n👤 Логин: {}\n🔑 Пароль: {}{}",
                         entry.service, entry.login, entry.password, note
                     )
                 });
