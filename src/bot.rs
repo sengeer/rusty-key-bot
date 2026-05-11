@@ -106,7 +106,7 @@ async fn handle_command(
         "/start" => {
             bot.send_message(
                 chat_id,
-                "🗝️ Rusty Key хранит секреты в зашифрованном виде.\n⚠️ Важно: если Telegram-аккаунт скомпрометирован, данные тоже в зоне риска.",
+                "🗝️ Rusty Key хранит секреты в зашифрованном виде.\n‼️ Важно: если Telegram-аккаунт скомпрометирован, данные тоже в зоне риска.",
             )
             .await?;
         }
@@ -127,7 +127,7 @@ async fn handle_command(
                         .service
                         .set_master(user_id, master)
                         .await
-                        .map(|_| "🔐 Мастер-пароль установлен/обновлён.".to_string()),
+                        .map(|_| "🔒 Мастер-пароль установлен/обновлён.".to_string()),
                 )
                 .await?;
             } else {
@@ -136,7 +136,7 @@ async fn handle_command(
                     .lock()
                     .await
                     .insert(chat_id, PendingAction::SetMaster);
-                bot.send_message(chat_id, "🔐 Введите новый мастер-пароль следующим сообщением.")
+                bot.send_message(chat_id, "🔑 Введите новый мастер-пароль следующим сообщением.")
                     .await?;
             }
         }
@@ -158,7 +158,7 @@ async fn handle_command(
                     .lock()
                     .await
                     .insert(chat_id, PendingAction::AddAwaitService);
-                bot.send_message(chat_id, "Шаг 1/4: отправьте название сервиса.")
+                bot.send_message(chat_id, "1️⃣ Шаг 1/4: отправьте название сервиса.")
                     .await?;
             }
         }
@@ -170,19 +170,19 @@ async fn handle_command(
                         service: service.to_string(),
                     },
                 );
-                bot.send_message(chat_id, "Введите мастер-пароль для расшифровки записи.")
+                bot.send_message(chat_id, "🔐 Введите мастер-пароль для расшифровки записи.")
                     .await?;
             } else {
-                bot.send_message(chat_id, "Использование: /get <service>")
+                bot.send_message(chat_id, "👉 Пример использования: /get google")
                     .await?;
             }
         }
         "/list" => {
             let result = state.service.list_services(user_id).await.map(|services| {
                 if services.is_empty() {
-                    "Список пуст.".to_string()
+                    "👾 Список пуст.".to_string()
                 } else {
-                    format!("Сервисы:\n- {}", services.join("\n- "))
+                    format!("📋 Сервисы:\n- {}", services.join("\n- "))
                 }
             });
             respond_result(&bot, chat_id, result).await?;
@@ -195,14 +195,14 @@ async fn handle_command(
                     .await
                     .map(|deleted| {
                         if deleted {
-                            "Запись удалена.".to_string()
+                            "✅ Запись удалена.".to_string()
                         } else {
-                            "Запись не найдена.".to_string()
+                            "🤷‍♂️ Запись не найдена.".to_string()
                         }
                     });
                 respond_result(&bot, chat_id, result).await?;
             } else {
-                bot.send_message(chat_id, "Использование: /delete <service>")
+                bot.send_message(chat_id, "👉 Пример использования: /delete google")
                     .await?;
             }
         }
@@ -216,11 +216,11 @@ async fn handle_command(
                 .and_then(|x| x.parse::<bool>().ok())
                 .unwrap_or(true);
             let result = generate_password(len, with_special)
-                .map(|p| format!("Сгенерированный пароль:\n`{p}`"));
+                .map(|p| format!("✨ Сгенерированный пароль:\n{p}"));
             respond_result(&bot, chat_id, result).await?;
         }
         _ => {
-            bot.send_message(chat_id, "Неизвестная команда. Используйте /help.")
+            bot.send_message(chat_id, "🤷‍♂️ Неизвестная команда. Используйте /help.")
                 .await?;
         }
     }
@@ -246,7 +246,7 @@ async fn handle_pending(
                     .service
                     .set_master(user_id, text)
                     .await
-                    .map(|_| "Мастер-пароль установлен/обновлён.".to_string()),
+                    .map(|_| "🔒 Мастер-пароль установлен/обновлён.".to_string()),
             )
             .await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
@@ -258,7 +258,7 @@ async fn handle_pending(
                     service: text.to_string(),
                 },
             );
-            bot.send_message(chat_id, "Шаг 2/4: отправьте логин.").await?;
+            bot.send_message(chat_id, "2️⃣ Шаг 2/4: отправьте логин.").await?;
         }
         PendingAction::AddAwaitLogin { service } => {
             state.pending.lock().await.insert(
@@ -268,7 +268,7 @@ async fn handle_pending(
                     login: text.to_string(),
                 },
             );
-            bot.send_message(chat_id, "Шаг 3/4: отправьте пароль записи.")
+            bot.send_message(chat_id, "3️⃣ Шаг 3/4: отправьте пароль записи.")
                 .await?;
         }
         PendingAction::AddAwaitPassword { service, login } => {
@@ -280,7 +280,7 @@ async fn handle_pending(
                     password: text.to_string(),
                 },
             );
-            bot.send_message(chat_id, "Шаг 4/4: отправьте note или '-' чтобы пропустить.")
+            bot.send_message(chat_id, "4️⃣ Шаг 4/4: отправьте заметку или '-' чтобы пропустить.")
                 .await?;
         }
         PendingAction::AddAwaitNote {
@@ -311,7 +311,7 @@ async fn handle_pending(
                 .service
                 .add_entry(user_id, input, text)
                 .await
-                .map(|_| "Запись сохранена.".to_string());
+                .map(|_| "✅ Запись сохранена.".to_string());
             respond_result(&bot, chat_id, result).await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
         }
@@ -356,7 +356,7 @@ async fn ask_master_for_add(
             note,
         },
     );
-    bot.send_message(chat_id, "Введите мастер-пароль для сохранения записи.")
+    bot.send_message(chat_id, "🔐 Введите мастер-пароль для сохранения записи.")
         .await?;
     Ok(())
 }
@@ -371,11 +371,11 @@ async fn respond_result(
         Ok(message) => message,
         Err(err) => match err {
             AppError::MasterPasswordNotSet => {
-                "Сначала установите мастер-пароль через /set_master.".to_string()
+                "🔑 Сначала установите мастер-пароль через /set_master.".to_string()
             }
-            AppError::InvalidMasterPassword => "Неверный мастер-пароль.".to_string(),
-            AppError::EntryNotFound => "Запись не найдена.".to_string(),
-            other => format!("Ошибка: {other}"),
+            AppError::InvalidMasterPassword => "❌ Неверный мастер-пароль.".to_string(),
+            AppError::EntryNotFound => "🤷‍♂️ Запись не найдена.".to_string(),
+            other => format!("❌ Ошибка: {other}"),
         },
     };
     bot.send_message(chat_id, text).await?;
