@@ -52,6 +52,25 @@ pub enum PendingAction {
     },
 }
 
+// Структура Reply
+struct Reply {
+    text: String,
+    markdown: bool,
+}
+
+// Имплементация Reply
+impl Reply {
+    // Прокидывание текста без markdown
+    fn from(s: String) -> Self {
+        Self { text: s, markdown: false }
+    }
+
+    // Прокидывание текста с включением markdown
+    fn markdown_v2(text: String) -> Self {
+        Self { text, markdown: true }
+    }
+}
+
 // Обработка сообщения пользователя
 pub async fn handle_message(bot: Bot, msg: Message, state: BotState) -> ResponseResult<()> {
     // ID чата
@@ -136,7 +155,7 @@ async fn handle_command(
                             .service
                             .set_master(user_id, new_master, None)
                             .await
-                            .map(|_| "🔒 Мастер-пароль установлен.".to_string()),
+                            .map(|_| Reply::from("🔒 Мастер-пароль установлен.".to_string())),
                     )
                     .await?;
                 } else {
@@ -214,9 +233,9 @@ async fn handle_command(
         "/list" => {
             let result = state.service.list_services(user_id).await.map(|services| {
                 if services.is_empty() {
-                    "👾 Список пуст.".to_string()
+                    Reply::from("👾 Список пуст.".to_string())
                 } else {
-                    format!("📋 Сервисы:\n- {}", services.join("\n- "))
+                    Reply::from(format!("📋 Сервисы:\n- {}", services.join("\n- ")))
                 }
             });
             respond_result(&bot, chat_id, result).await?;
@@ -229,9 +248,9 @@ async fn handle_command(
                     .await
                     .map(|deleted| {
                         if deleted {
-                            "✅ Запись удалена.".to_string()
+                            Reply::from("✅ Запись удалена.".to_string())
                         } else {
-                            "🤷‍♂️ Запись не найдена.".to_string()
+                            Reply::from("🤷‍♂️ Запись не найдена.".to_string())
                         }
                     });
                 respond_result(&bot, chat_id, result).await?;
@@ -249,8 +268,13 @@ async fn handle_command(
                 .next()
                 .and_then(|x| x.parse::<bool>().ok())
                 .unwrap_or(true);
-            let result = generate_password(len, with_special)
-                .map(|p| format!("{}\n{}", escape("✨ Сгенерированный пароль"), code_inline(&p)));
+            let result = generate_password(len, with_special).map(|p| {
+                Reply::markdown_v2(format!(
+                    "{}{}",
+                    escape("✨ Сгенерированный пароль: "),
+                    code_inline(&p)
+                ))
+            });
             respond_result(&bot, chat_id, result).await?;
         }
         _ => {
@@ -280,7 +304,7 @@ async fn handle_pending(
                     .service
                     .set_master(user_id, text, None)
                     .await
-                    .map(|_| "🔒 Мастер-пароль установлен.".to_string()),
+                    .map(|_| Reply::from("🔒 Мастер-пароль установлен.".to_string())),
             )
             .await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
@@ -294,7 +318,7 @@ async fn handle_pending(
                         .service
                         .set_master(user_id, &new_pwd, Some(text))
                         .await
-                        .map(|_| "🔒 Мастер-пароль обновлён.".to_string()),
+                        .map(|_| Reply::from("🔒 Мастер-пароль обновлён.".to_string())),
                 )
                 .await?;
             } else {
@@ -327,7 +351,7 @@ async fn handle_pending(
                     .service
                     .set_master(user_id, text, Some(current_master.as_str()))
                     .await
-                    .map(|_| "🔒 Мастер-пароль обновлён.".to_string()),
+                    .map(|_| Reply::from("🔒 Мастер-пароль обновлён.".to_string())),
             )
             .await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
@@ -392,7 +416,7 @@ async fn handle_pending(
                 .service
                 .add_entry(user_id, input, text)
                 .await
-                .map(|_| "✅ Запись сохранена.".to_string());
+                .map(|_| Reply::from("✅ Запись сохранена.".to_string()));
             respond_result(&bot, chat_id, result).await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
         }
@@ -406,10 +430,10 @@ async fn handle_pending(
                         .note
                         .map(|n| format!("\n📝 Заметка: {n}"))
                         .unwrap_or_default();
-                    format!(
+                    Reply::from(format!(
                         "👾 Сервис: {}\n👤 Логин: {}\n🔑 Пароль: {}{}",
                         entry.service, entry.login, entry.password, note
-                    )
+                    ))
                 });
             respond_result(&bot, chat_id, result).await?;
             best_effort_delete_message(&bot, chat_id, msg.id).await;
@@ -446,24 +470,31 @@ async fn ask_master_for_add(
 async fn respond_result(
     bot: &Bot,
     chat_id: ChatId,
-    result: Result<String, AppError>,
+    result: Result<Reply, AppError>,
 ) -> ResponseResult<()> {
-    let text = match result {
-        Ok(message) => message,
-        Err(err) => match err {
-            AppError::MasterPasswordNotSet => {
-                "🔑 Сначала установите мастер-пароль через /set_master.".to_string()
-            }
-            AppError::InvalidMasterPassword => "❌ Неверный мастер-пароль.".to_string(),
-            AppError::CurrentMasterPasswordRequired => {
-                "🔐 Чтобы сменить мастер-пароль, сначала подтвердите текущий (см. /set_master)."
-                    .to_string()
-            }
-            AppError::EntryNotFound => "🤷‍♂️ Запись не найдена.".to_string(),
-            other => format!("❌ Ошибка: {other}"),
+    let reply = match result {
+        Ok(reply) => reply,
+        Err(err) => Reply {
+            text: match err {
+                AppError::MasterPasswordNotSet => {
+                    "🔑 Сначала установите мастер-пароль через /set_master.".to_string()
+                }
+                AppError::InvalidMasterPassword => "❌ Неверный мастер-пароль.".to_string(),
+                AppError::CurrentMasterPasswordRequired => {
+                    "🔐 Чтобы сменить мастер-пароль, сначала подтвердите текущий (см. /set_master)."
+                        .to_string()
+                }
+                AppError::EntryNotFound => "🤷‍♂️ Запись не найдена.".to_string(),
+                other => format!("❌ Ошибка: {other}"),
+            },
+            markdown: false,
         },
     };
-    bot.send_message(chat_id, text).parse_mode(ParseMode::MarkdownV2).await?;
+    let mut req = bot.send_message(chat_id, reply.text);
+    if reply.markdown {
+        req = req.parse_mode(ParseMode::MarkdownV2);
+    }
+    req.await?;
     Ok(())
 }
 
