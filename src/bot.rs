@@ -428,11 +428,11 @@ async fn handle_pending(
                 .map(|entry| {
                     let note = entry
                         .note
-                        .map(|n| format!("\n📝 Заметка: {n}"))
+                        .map(|n| format!("\n✍🏻 Заметка: {n}"))
                         .unwrap_or_default();
-                    Reply::from(format!(
-                        "👾 Сервис: {}\n👤 Логин: {}\n🔑 Пароль: {}{}",
-                        entry.service, entry.login, entry.password, note
+                    Reply::markdown_v2(format!(
+                        "🌐 Сервис: {}\n👤 Логин: {}\n🔑 Пароль: {}{}",
+                        escape(&entry.service), code_inline(&entry.login), code_inline(&entry.password), escape(&note)
                     ))
                 });
             respond_result(&bot, chat_id, result).await?;
