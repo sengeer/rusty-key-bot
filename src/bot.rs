@@ -2,7 +2,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 // Импорт API из внешних крейтов
-use teloxide::{prelude::*, types::MessageId};
+use teloxide::{prelude::*, types::{MessageId, ParseMode}, utils::markdown::{code_inline, escape}};
 use tokio::sync::Mutex;
 
 // Групповой импорт модулей
@@ -111,11 +111,9 @@ async fn handle_command(
                 "🗝️ Rusty Key хранит секреты в зашифрованном виде.\n‼️ Важно: если Telegram-аккаунт скомпрометирован, данные тоже в зоне риска.\n/help - шпаргалка по командам.",
             )
             .await?;
-        }
-        "/help" => {
             bot.send_message(
                 chat_id,
-                "/start - начало;\n/help - шпаргалка по командам (мы тут);\n/set_master [новый_мастер] - установка или смена мастер-пароля (при смене бот запросит текущий пароль);\n/add [service] [login] [password] [note?] - добавить запись указав через пробел: название сервиса, логин, пароль и текст заметки (необязательно). Пример: /add google example@example.com nCOzFyBxXdmDE3rD заметка;\n/get [service] - получить запись по названию сервиса;\n/list - список записей;\n/delete [service] - удалить запись по названию сервиса;\n/gen [len] [special:true|false] - сгенерировать пароль, указав через пробел: длину пароля и использовать ли спец. символы (!@#$%^&*()-_=+[]{};:,.?). Пример: /gen 16 true.",
+                "/start - начало;\n/help - шпаргалка по командам;\n/set_master [новый_мастер-пароль] - установка или смена мастер-пароля (при смене бот запросит текущий пароль);\n/add [сервис] [логин] [пароль] [заметка?] - добавить запись указав через пробел: название сервиса, логин, пароль и текст заметки (необязательно). Пример: /add google example@example.com nCOzFyBxXdmDE3rD заметка;\n/get [сервис] - получить запись по названию сервиса;\n/list - список записей;\n/delete [сервис] - удалить запись по названию сервиса;\n/gen [длина] [спец.символы:true|false] - сгенерировать пароль, указав через пробел: длину пароля и использовать ли спец. символы (!@#$%^&*()-_=+[]{};:,.?). Пример: /gen 16 true.",
             )
             .await?;
         }
@@ -250,7 +248,7 @@ async fn handle_command(
                 .and_then(|x| x.parse::<bool>().ok())
                 .unwrap_or(true);
             let result = generate_password(len, with_special)
-                .map(|p| format!("✨ Сгенерированный пароль:\n{p}"));
+                .map(|p| format!("{}\n{}", escape("✨ Сгенерированный пароль"), code_inline(&p)));
             respond_result(&bot, chat_id, result).await?;
         }
         _ => {
@@ -463,7 +461,7 @@ async fn respond_result(
             other => format!("❌ Ошибка: {other}"),
         },
     };
-    bot.send_message(chat_id, text).await?;
+    bot.send_message(chat_id, text).parse_mode(ParseMode::MarkdownV2).await?;
     Ok(())
 }
 
