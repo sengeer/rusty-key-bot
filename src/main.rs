@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let repo = infra::SqliteVaultRepository::new(pool);
     // Создание реализации CryptoManager
     let crypto = infra::CryptoManager;
-    // Соборка VaultService
+    // Сборка VaultService
     let service = Arc::new(VaultService::new(repo, crypto));
 
     // Создание бота

@@ -59,7 +59,7 @@ pub struct EncryptedEntry {
     pub note: Option<EncryptedField>,
 }
 
-// Фунция генерации паролей
+// Функция генерации паролей
 pub fn generate_password(length: usize, with_special: bool) -> Result<String, AppError> {
     if !(8..=128).contains(&length) {
         return Err(AppError::InvalidArgument(

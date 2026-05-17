@@ -47,6 +47,8 @@ pub enum PendingAction {
         password: String,
         note: Option<String>,
     },
+    GetAwaitService,
+    DeleteAwaitService,
     GetAwaitMaster {
         service: String,
     },
@@ -217,16 +219,14 @@ async fn handle_command(
         }
         "/get" => {
             if let Some(service) = parts.next() {
-                state.pending.lock().await.insert(
-                    chat_id,
-                    PendingAction::GetAwaitMaster {
-                        service: service.to_string(),
-                    },
-                );
-                bot.send_message(chat_id, "🔐 Введите мастер-пароль для расшифровки записи.")
-                    .await?;
+                ask_master_for_get(&bot, chat_id, &state, service.to_string()).await?;
             } else {
-                bot.send_message(chat_id, "👉 Пример использования: /get google")
+                state
+                    .pending
+                    .lock()
+                    .await
+                    .insert(chat_id, PendingAction::GetAwaitService);
+                bot.send_message(chat_id, "🌐 Отправьте название сервиса что бы получить запись.")
                     .await?;
             }
         }
@@ -242,20 +242,14 @@ async fn handle_command(
         }
         "/delete" => {
             if let Some(service) = parts.next() {
-                let result = state
-                    .service
-                    .delete_entry(user_id, service)
-                    .await
-                    .map(|deleted| {
-                        if deleted {
-                            Reply::from("✅ Запись удалена.".to_string())
-                        } else {
-                            Reply::from("🤷‍♂️ Запись не найдена.".to_string())
-                        }
-                    });
-                respond_result(&bot, chat_id, result).await?;
+                delete_entry(&bot, chat_id, &state, user_id, service).await?;
             } else {
-                bot.send_message(chat_id, "👉 Пример использования: /delete google")
+                state
+                    .pending
+                    .lock()
+                    .await
+                    .insert(chat_id, PendingAction::DeleteAwaitService);
+                bot.send_message(chat_id, "🌐 Отправьте название сервиса что бы удалить запись.")
                     .await?;
             }
         }
@@ -400,6 +394,12 @@ async fn handle_pending(
             };
             ask_master_for_add(&bot, chat_id, &state, service, login, password, note).await?;
         }
+        PendingAction::GetAwaitService => {
+            ask_master_for_get(&bot, chat_id, &state, text.to_string()).await?;
+        }
+        PendingAction:: DeleteAwaitService => {
+            delete_entry(&bot, chat_id, &state, user_id, text).await?;
+        }
         PendingAction::AddAwaitMaster {
             service,
             login,
@@ -463,6 +463,47 @@ async fn ask_master_for_add(
     );
     bot.send_message(chat_id, "🔐 Введите мастер-пароль для сохранения записи.")
         .await?;
+    Ok(())
+}
+
+// Запрос мастер-пароля для получения записи
+async fn ask_master_for_get(
+    bot: &Bot,
+    chat_id: ChatId,
+    state: &BotState,
+    service: String,
+) -> ResponseResult<()> {
+    state.pending.lock().await.insert(
+        chat_id,
+        PendingAction::GetAwaitMaster {
+            service: service,
+        },
+    );
+    bot.send_message(chat_id, "🔐 Введите мастер-пароль для расшифровки записи.")
+        .await?;
+    Ok(())
+}
+
+// Удаление записи
+async fn delete_entry(
+    bot: &Bot,
+    chat_id: ChatId,
+    state: &BotState,
+    user_id: i64,
+    service: &str,
+) -> ResponseResult<()> {
+    let result = state
+        .service
+        .delete_entry(user_id, service)
+        .await
+        .map(|deleted| {
+            if deleted {
+                Reply::from("✅ Запись удалена.".to_string())
+            } else {
+                Reply::from("🤷‍♂️ Запись не найдена.".to_string())
+            }
+        });
+    respond_result(&bot, chat_id, result).await?;
     Ok(())
 }
 
